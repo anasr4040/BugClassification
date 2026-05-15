@@ -1,0 +1,8 @@
+langgraph
+langchain
+langchain-openai
+langchain-xai
+langsmith
+python-dotenv
+notion-client
+pytest
