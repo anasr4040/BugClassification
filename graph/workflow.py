@@ -7,6 +7,7 @@ from langgraph.graph import END, StateGraph
 from bug_classifier.agents.component_identifier import identify_component
 from bug_classifier.agents.severity_assessor import assess_severity
 from bug_classifier.agents.summary_agent import summarize
+from bug_classifier.agents.supervisor import supervise
 from bug_classifier.agents.type_classifier import classify_type
 from bug_classifier.integrations.notion_logger import log_to_notion
 from bug_classifier.observability import log_classification_metrics
@@ -58,6 +59,35 @@ def _route_after_severity(state: BugState) -> str:
     return "identify_component"
 
 
+_RECLASSIFY_NODES = {
+    "type": "classify_type",
+    "severity": "assess_severity",
+    "component": "identify_component",
+}
+
+
+def _route_after_supervisor(state: BugState) -> str:
+    """Route on the supervisor's verdict: proceed, or loop back to a specialist.
+
+    A reclassified dimension cascades through its downstream agents (a new
+    bug_type re-informs severity and component) and returns to the supervisor,
+    whose retry budget bounds the loop.
+    """
+    if state.get("supervisor_verdict") == "reclassify":
+        target = state.get("reclassify_target")
+        node = _RECLASSIFY_NODES.get(target or "")
+        if node:
+            logger.info("Branch: supervisor requested reclassification → %s", node)
+            return node
+        logger.warning(
+            "Supervisor requested reclassification of unknown target %r; "
+            "proceeding to summarize.",
+            target,
+        )
+    logger.info("Branch: supervisor approved → summarize")
+    return "summarize"
+
+
 def _build_graph() -> StateGraph:
     graph = StateGraph(BugState)
 
@@ -66,6 +96,7 @@ def _build_graph() -> StateGraph:
     graph.add_node(
         "identify_component", _logged_node("identify_component", identify_component)
     )
+    graph.add_node("supervisor", _logged_node("supervisor", supervise))
     graph.add_node("summarize", _logged_node("summarize", summarize))
     graph.add_node(
         "log_to_notion",
@@ -86,7 +117,17 @@ def _build_graph() -> StateGraph:
             "identify_component": "identify_component",
         },
     )
-    graph.add_edge("identify_component", "summarize")
+    graph.add_edge("identify_component", "supervisor")
+    graph.add_conditional_edges(
+        "supervisor",
+        _route_after_supervisor,
+        {
+            "summarize": "summarize",
+            "classify_type": "classify_type",
+            "assess_severity": "assess_severity",
+            "identify_component": "identify_component",
+        },
+    )
     graph.add_edge("summarize", "log_to_notion")
     graph.add_edge("log_to_notion", END)
     graph.add_edge("emergency_handler", END)

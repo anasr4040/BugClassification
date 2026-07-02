@@ -215,6 +215,7 @@ NODE_LABELS: dict[str, str] = {
     "classify_type": "Type Classifier",
     "assess_severity": "Severity Assessor",
     "identify_component": "Component Identifier",
+    "supervisor": "Supervisor (QA Review)",
     "summarize": "Summary Agent",
     "log_to_notion": "Notion Logger",
     "emergency_handler": "Emergency Handler (P0)",
@@ -299,6 +300,23 @@ def _print_node_output(
             print(_colorize("    ⚠ P0 detected — routing to emergency path", YELLOW))
     elif node_name == "identify_component":
         print(_colorize(f"    Component: {update.get('component', '—')}", GREEN))
+    elif node_name == "supervisor":
+        if update.get("supervisor_verdict") == "reclassify":
+            target = update.get("reclassify_target", "—")
+            print(_colorize(f"    Verdict: reclassify '{target}'", YELLOW))
+            hint = update.get("reclassify_hint")
+            if hint:
+                print(_colorize(f"    Hint: {hint}", YELLOW))
+        else:
+            print(_colorize("    Verdict: approved", GREEN))
+            if update.get("needs_review"):
+                print(
+                    _colorize(
+                        f"    ⚠ Manual review recommended: "
+                        f"{update.get('supervisor_notes', '')}",
+                        YELLOW,
+                    )
+                )
     elif node_name == "summarize":
         summary = update.get("summary", "")
         preview = summary[:280] + ("…" if len(summary) > 280 else "")

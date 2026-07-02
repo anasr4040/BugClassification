@@ -45,6 +45,7 @@ AGENT_OUTPUT_FIELDS = {
     "type_classifier": "bug_type",
     "severity_assessor": "severity",
     "component_identifier": "component",
+    "supervisor": "supervisor_verdict",
     "summary_agent": "summary",
 }
 
@@ -143,16 +144,37 @@ def log_classification_metrics(state: BugState) -> None:
     severity = state.get("severity")
     bug_type = state.get("bug_type")
 
+    retry_counts = state.get("retry_counts") or {}
+    total_reclassifications = sum(retry_counts.values())
+
     logger.info(
         "Pipeline metrics | branch=%s | agents_run=%d | bug_type=%s | severity=%s | "
-        "avg_confidence=%s | ticket_url=%s",
+        "avg_confidence=%s | supervisor=%s | reclassifications=%d | "
+        "needs_review=%s | ticket_url=%s",
         branch,
         agents_run,
         bug_type,
         severity,
         avg_confidence,
+        state.get("supervisor_verdict"),
+        total_reclassifications,
+        bool(state.get("needs_review")),
         state.get("ticket_url"),
     )
+
+    if total_reclassifications:
+        logger.info(
+            "Supervisor triggered %d reclassification(s): %s. If this rate is "
+            "high across runs, revisit specialist prompts.",
+            total_reclassifications,
+            retry_counts,
+        )
+
+    if state.get("needs_review"):
+        logger.warning(
+            "Supervisor flagged ticket for manual review: %s",
+            state.get("supervisor_notes"),
+        )
 
     if low_conf:
         logger.warning(

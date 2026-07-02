@@ -8,6 +8,7 @@ import pytest
 
 from bug_classifier.agents.component_identifier import ComponentIdentification
 from bug_classifier.agents.severity_assessor import SeverityAssessment
+from bug_classifier.agents.supervisor import SupervisorReview
 from bug_classifier.agents.type_classifier import TypeClassification
 from bug_classifier.state import create_initial_state
 from bug_classifier.tests.conftest import (
@@ -91,7 +92,11 @@ class TestWorkflow:
             assert final.get(field) is not None, f"Missing field: {field}"
 
     def test_agent_error_does_not_crash_pipeline(
-        self, monkeypatch: pytest.MonkeyPatch, patch_severity_llm, patch_component_llm
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        patch_severity_llm,
+        patch_component_llm,
+        patch_supervisor_llm,
     ) -> None:
         failing_llm = MagicMock()
         failing_llm.with_structured_output.side_effect = RuntimeError("LLM unavailable")
@@ -106,6 +111,15 @@ class TestWorkflow:
                 component="backend", confidence=0.85, reasoning="Backend."
             )
         )
+        # The type fallback carries 0.5 confidence, so the supervisor consults
+        # its reviewer LLM; have it approve despite the flag.
+        patch_supervisor_llm(
+            SupervisorReview(
+                approved=True,
+                problem_dimension="none",
+                reasoning="Fallback classification is acceptable.",
+            )
+        )
 
         from bug_classifier.graph.workflow import build_graph
 
@@ -115,3 +129,5 @@ class TestWorkflow:
         assert final.get("severity") == "P2"
         assert final.get("component") == "backend"
         assert final.get("error") is None
+        # Approval with outstanding flags keeps a human in the loop.
+        assert final.get("needs_review") is True

@@ -20,6 +20,7 @@ os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 from bug_classifier.agents.component_identifier import ComponentIdentification
 from bug_classifier.agents.severity_assessor import SeverityAssessment
 from bug_classifier.agents.summary_agent import BugTicketSummary
+from bug_classifier.agents.supervisor import SupervisorReview
 from bug_classifier.agents.type_classifier import TypeClassification
 from bug_classifier.state import BugState, create_initial_state
 
@@ -149,13 +150,22 @@ def patch_summary_llm(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
 
 
 @pytest.fixture
+def patch_supervisor_llm(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
+    def _patch(response: SupervisorReview) -> None:
+        patch_llm(monkeypatch, "bug_classifier.agents.supervisor._build_llm", response)
+
+    return _patch
+
+
+@pytest.fixture
 def patch_all_agents_default(
     monkeypatch: pytest.MonkeyPatch,
     patch_type_llm,
     patch_severity_llm,
     patch_component_llm,
+    patch_supervisor_llm,
 ) -> None:
-    """Patch type, severity, and component agents with sensible defaults."""
+    """Patch type, severity, component, and supervisor agents with sensible defaults."""
     patch_type_llm(
         TypeClassification(type="logic", confidence=0.9, reasoning="Default mock type.")
     )
@@ -165,6 +175,14 @@ def patch_all_agents_default(
     patch_component_llm(
         ComponentIdentification(
             component="backend", confidence=0.9, reasoning="Default mock component."
+        )
+    )
+    patch_supervisor_llm(
+        SupervisorReview(
+            approved=True,
+            problem_dimension="none",
+            hint="",
+            reasoning="Default mock approval.",
         )
     )
 

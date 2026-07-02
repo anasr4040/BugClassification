@@ -123,6 +123,16 @@ def _confidence_block(scores: dict[str, float]) -> str:
     return block
 
 
+def _supervisor_block(state: BugState) -> str:
+    """Surface the supervisor's verdict in the ticket when it matters."""
+    if state.get("needs_review") and state.get("supervisor_notes"):
+        return (
+            f"\n\n**Supervisor**: Manual review requested — "
+            f"{state['supervisor_notes']}"
+        )
+    return ""
+
+
 def _format_summary_direct(state: BugState) -> str:
     """Build the ticket summary without an LLM call."""
     scores = _confidence_scores(state)
@@ -138,6 +148,7 @@ def _format_summary_direct(state: BugState) -> str:
         f"**Summary**: {_brief_description(state['raw_report'])}\n\n"
         f"**Suggested Action**: {_suggested_action(severity)}\n\n"
         f"**Confidence**:\n{_confidence_block(scores)}"
+        f"{_supervisor_block(state)}"
     )
 
 
@@ -146,10 +157,16 @@ def _build_llm_context(state: BugState) -> str:
     score_lines = "\n".join(
         f"- {key}: {value:.2f}" for key, value in scores.items()
     ) or "- (none)"
+    supervisor_note = ""
+    if state.get("supervisor_notes"):
+        supervisor_note = f"\nSupervisor review: {state['supervisor_notes']}"
+        if state.get("needs_review"):
+            supervisor_note += " (manual review recommended — mention this)"
     return (
         f"Bug type: {state.get('bug_type') or 'unknown'}\n"
         f"Severity: {state.get('severity') or 'unknown'}\n"
-        f"Component: {state.get('component') or 'unknown'}\n\n"
+        f"Component: {state.get('component') or 'unknown'}\n"
+        f"{supervisor_note}\n"
         f"Confidence scores:\n{score_lines}\n\n"
         f"Original report:\n{state['raw_report']}"
     )
@@ -196,6 +213,7 @@ def summarize(state: BugState) -> dict:
                 "**Suggested Action**: Review classification outputs and assign manually.\n\n"
                 "**Confidence**:\n"
                 f"{_confidence_block(_confidence_scores(state))}"
+                f"{_supervisor_block(state)}"
             )
         }
 

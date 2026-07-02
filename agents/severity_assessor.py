@@ -6,6 +6,7 @@ from langchain_xai import ChatXAI
 from pydantic import BaseModel, Field
 
 from bug_classifier import config
+from bug_classifier.agents.supervisor import hint_for_dimension
 from bug_classifier.observability import trace_agent
 from bug_classifier.state import BugState
 
@@ -59,6 +60,7 @@ def _build_human_message(state: BugState) -> str:
     return (
         f"Bug type (from prior classification): {bug_type}\n\n"
         f"Bug report:\n{state['raw_report']}"
+        f"{hint_for_dimension(state, 'severity')}"
     )
 
 

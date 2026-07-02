@@ -1,6 +1,47 @@
 # Bug classifier (LangGraph)
 
-Multi-agent bug classification pipeline: type, severity (P0–P3), component, and summary. Notion logging will plug in under `integrations/`.
+Multi-agent bug classification system: type, severity (P0–P3), component, and summary, reviewed by a supervisor agent before Notion logging.
+
+## Architecture
+
+```
+raw report
+   │
+   ▼
+classify_type ──► assess_severity ──► P0? ──► emergency_handler ──► END
+   ▲                    ▲              │
+   │                    │              ▼ (non-P0)
+   │                    │        identify_component ◄─┐
+   │                    │              │              │
+   │                    │              ▼              │
+   └────────────────────┴──────── supervisor ─────────┘
+                             (approve / reclassify one dimension)
+                                       │ approved
+                                       ▼
+                                   summarize ──► log_to_notion ──► END
+```
+
+Specialist agents classify the report; the **supervisor** then reviews their
+combined output at runtime. This is what makes the pipeline a multi-agent
+*system* rather than a fixed workflow — the supervisor, not the developer,
+decides the next step:
+
+1. **Rule-based pre-checks (free).** Low per-dimension confidence (< 0.7) or a
+   suspicious cross-dimension combination (e.g. a P3 security bug, a P0 UI
+   glitch) flags the run. With no flags, the supervisor approves without an
+   LLM call.
+2. **LLM review (only when flagged).** A reviewer model sees the report, the
+   classifications, and the flags, then either approves or sends exactly one
+   dimension back to its specialist with an actionable hint (e.g. *"report
+   mentions SQL injection — reconsider 'logic'"*). The retried agent receives
+   that hint in its prompt, and a reclassified dimension cascades through its
+   downstream agents.
+3. **Bounded loops, graceful exits.** Each dimension is retried at most once.
+   When the budget is exhausted — or the reviewer LLM fails — the supervisor
+   approves and sets `needs_review` so the Notion ticket flags a human.
+
+P0 bugs still bypass everything via the emergency fast-path: seconds matter
+more than a second opinion.
 
 ## Prerequisites
 
@@ -96,7 +137,8 @@ After changing any agent prompt, run `make eval` to check type/severity/componen
 
 - `main.py` — Entry point
 - `state.py` — `BugState` TypedDict and `create_initial_state`
-- `agents/` — One node per concern (placeholders)
-- `graph/workflow.py` — LangGraph `StateGraph` wiring
-- `integrations/notion_logger.py` — Notion hook (placeholder)
+- `agents/` — One node per concern (type, severity, component, summary)
+- `agents/supervisor.py` — Supervisor: confidence/consistency review and reclassification routing
+- `graph/workflow.py` — LangGraph `StateGraph` wiring, emergency and supervisor routing
+- `integrations/notion_logger.py` — Notion ticket creation with retry/dry-run
 - `config.py` — Environment loading and validation

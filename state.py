@@ -51,6 +51,31 @@ class BugState(TypedDict, total=False):
         error:
             Human-readable processing or integration failure message. Any agent
             or integration may set this when aborting or degrading gracefully.
+
+        supervisor_verdict:
+            ``"approved"`` or ``"reclassify"``. Set by the **supervisor** agent
+            (``agents/supervisor.py``) after reviewing the combined
+            classification for confidence and cross-dimension consistency.
+
+        reclassify_target:
+            Which dimension the supervisor wants re-run: ``"type"``,
+            ``"severity"``, or ``"component"``. ``None`` when approved.
+
+        reclassify_hint:
+            Supervisor feedback passed to the targeted agent on the retry pass
+            (e.g. "report mentions SQL injection — reconsider 'logic'").
+
+        retry_counts:
+            Per-dimension reclassification counts, e.g. ``{"type": 1}``. Used
+            by the supervisor to bound feedback loops.
+
+        needs_review:
+            True when the supervisor approved with reservations (low
+            confidence, exhausted retry budget, or supervisor LLM failure) and
+            a human should double-check the ticket.
+
+        supervisor_notes:
+            Human-readable rationale for the supervisor's verdict.
     """
 
     raw_report: Required[str]
@@ -61,6 +86,12 @@ class BugState(TypedDict, total=False):
     ticket_url: NotRequired[str | None]
     confidence_scores: NotRequired[dict[str, float] | None]
     error: NotRequired[str | None]
+    supervisor_verdict: NotRequired[str | None]
+    reclassify_target: NotRequired[str | None]
+    reclassify_hint: NotRequired[str | None]
+    retry_counts: NotRequired[dict[str, int] | None]
+    needs_review: NotRequired[bool | None]
+    supervisor_notes: NotRequired[str | None]
 
 
 def create_initial_state(raw_report: str) -> BugState:
@@ -85,4 +116,10 @@ def create_initial_state(raw_report: str) -> BugState:
         "ticket_url": None,
         "confidence_scores": None,
         "error": None,
+        "supervisor_verdict": None,
+        "reclassify_target": None,
+        "reclassify_hint": None,
+        "retry_counts": None,
+        "needs_review": None,
+        "supervisor_notes": None,
     }
