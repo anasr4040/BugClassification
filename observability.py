@@ -96,10 +96,12 @@ def trace_agent(agent_name: str) -> Callable[[Callable[[BugState], dict]], Calla
 
 
 def _infer_pipeline_branch(state: BugState) -> str:
-    if state.get("severity") == "P0" and not state.get("component"):
+    if state.get("severity") == "P0" and not state.get("summary"):
         return "emergency_handler (P0 fast-path)"
     if state.get("component") and state.get("summary"):
-        return "normal (classify → assess → component → summarize → notion)"
+        if state.get("revision_round"):
+            return "normal with supervisor revision (parallel specialists → supervisor loop → summarize → notion)"
+        return "normal (parallel specialists → supervisor → summarize → notion)"
     if state.get("severity"):
         return "partial (incomplete downstream agents)"
     return "unknown"

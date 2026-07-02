@@ -97,19 +97,56 @@ class MockStructuredLLM:
         self.invoke = MagicMock(return_value=response)
 
 
+class MockToolBoundLLM:
+    """Stand-in for ``llm.bind_tools(...)`` that never requests a tool call."""
+
+    def __init__(self) -> None:
+        from langchain_core.messages import AIMessage
+
+        self.invoke = MagicMock(return_value=AIMessage(content=""))
+
+
 class MockChatXAI:
-    """Stand-in for ChatXAI that returns a fixed structured output."""
+    """Stand-in for ChatXAI that returns fixed structured output(s).
+
+    Pass a single pydantic response, or a **list** of responses to be consumed
+    in order across successive structured-output invocations (useful for
+    supervisor revision-loop tests). The final response repeats once the
+    sequence is exhausted.
+    """
 
     def __init__(self, response: Any) -> None:
         self._response = response
+        self._queue: list[Any] | None = (
+            list(response) if isinstance(response, list) else None
+        )
 
-    def with_structured_output(self, schema: Any) -> MockStructuredLLM:
-        return MockStructuredLLM(self._response)
+    def bind_tools(self, tools: Any) -> MockToolBoundLLM:
+        return MockToolBoundLLM()
+
+    def with_structured_output(self, schema: Any) -> Any:
+        if self._queue is None:
+            return MockStructuredLLM(self._response)
+
+        queue = self._queue
+
+        class _SequenceRunner:
+            def invoke(self, messages: Any) -> Any:
+                if len(queue) > 1:
+                    return queue.pop(0)
+                return queue[0]
+
+        return _SequenceRunner()
 
 
 def patch_llm(monkeypatch: pytest.MonkeyPatch, target: str, response: Any) -> None:
-    """Patch ``_build_llm`` in an agent module to return deterministic output."""
-    monkeypatch.setattr(target, lambda: MockChatXAI(response))
+    """Patch ``_build_llm`` in an agent module to return deterministic output.
+
+    ``response`` may be a single structured output or an ordered list (see
+    :class:`MockChatXAI`).
+    """
+    mock = MockChatXAI(response)
+    monkeypatch.setattr(target, lambda: mock)
 
 
 @pytest.fixture
@@ -146,6 +183,26 @@ def patch_summary_llm(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
         patch_llm(monkeypatch, "bug_classifier.agents.summary_agent._build_llm", response)
 
     return _patch
+
+
+@pytest.fixture
+def patch_supervisor_llm(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
+    """Patch the supervisor critic LLM (pass a SupervisorCritique or a list)."""
+
+    def _patch(response: Any) -> None:
+        patch_llm(monkeypatch, "bug_classifier.agents.supervisor._build_llm", response)
+
+    return _patch
+
+
+@pytest.fixture
+def fail_supervisor_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force the supervisor critic LLM to fail → deterministic rule feedback."""
+
+    def _boom() -> Any:
+        raise RuntimeError("supervisor LLM unavailable")
+
+    monkeypatch.setattr("bug_classifier.agents.supervisor._build_llm", _boom)
 
 
 @pytest.fixture

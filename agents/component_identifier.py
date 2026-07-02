@@ -5,10 +5,13 @@ from langchain_xai import ChatXAI
 from pydantic import BaseModel, Field, field_validator
 
 from bug_classifier import config
+from bug_classifier.agents.tools import COMPONENT_TOOLS, run_tool_loop
 from bug_classifier.observability import trace_agent
 from bug_classifier.state import BugState
 
 logger = logging.getLogger(__name__)
+
+AGENT_NAME = "component_identifier"
 
 _VALID_COMPONENTS = frozenset(config.BUG_COMPONENTS)
 
@@ -19,10 +22,12 @@ def _build_system_prompt() -> str:
         for name, description in config.COMPONENT_DESCRIPTIONS.items()
     )
     valid_list = ", ".join(config.BUG_COMPONENTS)
-    return f"""You are a specialized component identifier. Your ONLY task is to identify which engineering component or team area is affected by a bug report.
+    return f"""You are a specialized component identifier agent in a multi-agent triage system. Your ONLY task is to identify which engineering component or team area is affected by a bug report.
 
 Valid components (engineering team boundaries):
 {component_lines}
+
+You may call the provided tools (technology-keyword matching, stack-trace parsing) to gather technical evidence before deciding.
 
 Look for technical signals in the bug report:
 - Stack traces mentioning specific files or services
@@ -30,9 +35,11 @@ Look for technical signals in the bug report:
 - Error codes or HTTP status codes
 - References to specific technologies (e.g., "React" → frontend, "PostgreSQL" → database)
 
-Use bug_type and severity from prior classification as supporting context, but base your decision on technical evidence in the report.
+Use bug_type and severity from parallel classifiers as supporting context when available, but base your decision on technical evidence in the report.
 
-You are ONLY identifying the affected component. Do NOT reassess severity or reclassify the bug type. Do NOT write a summary. Respond ONLY with valid JSON.
+If a supervisor reviewer provided revision feedback, take it seriously and re-examine the evidence rather than repeating your previous answer.
+
+You are ONLY identifying the affected component. Do NOT reassess severity or reclassify the bug type. Do NOT write a summary. Your final answer MUST be the structured identification.
 
 Required JSON shape:
 {{"component": "<one of: {valid_list}>", "confidence": <0.0-1.0>, "reasoning": "<one sentence>"}}"""
@@ -68,34 +75,57 @@ def _default_identification(existing_scores: dict[str, float]) -> dict:
     return {
         "component": config.DEFAULT_COMPONENT,
         "confidence_scores": existing_scores,
+        "agent_notes": [
+            {
+                "agent": AGENT_NAME,
+                "note": (
+                    f"LLM identification failed; defaulted to "
+                    f"{config.DEFAULT_COMPONENT!r} with confidence 0.5 — "
+                    "treat as unverified."
+                ),
+            }
+        ],
     }
 
 
 def _build_human_message(state: BugState) -> str:
     bug_type = state.get("bug_type") or "unknown"
     severity = state.get("severity") or "unknown"
+    feedback = (state.get("revision_feedback") or {}).get("component")
+    feedback_block = (
+        f"Supervisor revision feedback on your previous identification: {feedback}\n\n"
+        if feedback
+        else ""
+    )
     return (
         f"Bug type: {bug_type}\n"
         f"Severity: {severity}\n\n"
+        f"{feedback_block}"
         f"Bug report:\n{state['raw_report']}"
     )
 
 
-@trace_agent("component_identifier")
+@trace_agent(AGENT_NAME)
 def identify_component(state: BugState) -> dict:
     """Identify the affected engineering component from state context.
 
-    Returns only fields owned by this agent: ``component`` and ``confidence_scores``.
+    Tool-using agent: may call investigation tools before committing to its
+    structured answer. Returns only fields owned by this agent: ``component``,
+    ``confidence_scores``, and its ``agent_notes`` entry.
     """
     existing_scores = dict(state.get("confidence_scores") or {})
 
     try:
-        llm = _build_llm().with_structured_output(ComponentIdentification)
-        result = llm.invoke(
-            [
-                SystemMessage(content=_build_system_prompt()),
-                HumanMessage(content=_build_human_message(state)),
-            ]
+        llm = _build_llm()
+        messages = [
+            SystemMessage(content=_build_system_prompt()),
+            HumanMessage(content=_build_human_message(state)),
+        ]
+        transcript, tools_used = run_tool_loop(
+            llm, COMPONENT_TOOLS, messages, agent_name=AGENT_NAME
+        )
+        result = llm.with_structured_output(ComponentIdentification).invoke(
+            messages + transcript
         )
 
         if not isinstance(result, ComponentIdentification):
@@ -119,7 +149,17 @@ def identify_component(state: BugState) -> dict:
             confidence = 0.5
 
         existing_scores["component"] = confidence
-        return {"component": component, "confidence_scores": existing_scores}
+        return {
+            "component": component,
+            "confidence_scores": existing_scores,
+            "agent_notes": [
+                {
+                    "agent": AGENT_NAME,
+                    "note": result.reasoning,
+                    "tools_used": tools_used,
+                }
+            ],
+        }
 
     except Exception:
         logger.warning(
