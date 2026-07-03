@@ -129,9 +129,10 @@ After changing any agent prompt, run `make eval` to check type/severity/componen
 
 ## Project layout
 
-- `main.py` — Entry point
-- `state.py` — `BugState` TypedDict with reducers for parallel-agent writes
-- `agents/` — Specialist agents (type, severity, component, summary), the supervisor/critic, and their investigation tools (`tools.py`)
-- `graph/workflow.py` — LangGraph `StateGraph` wiring: parallel fan-out, supervisor routing, revision loop, emergency path
-- `integrations/notion_logger.py` — Notion ticket creation
-- `config.py` — Environment loading, validation, and orchestration knobs
+- `Makefile` — `install` / `test` / `eval` / `demo` targets (run from the repo root)
+- `bug_classifier/main.py` — Entry point (`python -m bug_classifier.main`)
+- `bug_classifier/state.py` — `BugState` TypedDict with reducers for parallel-agent writes
+- `bug_classifier/agents/` — Specialist agents (type, severity, component, summary), the supervisor/critic, and their investigation tools (`tools.py`)
+- `bug_classifier/graph/workflow.py` — LangGraph `StateGraph` wiring: parallel fan-out, supervisor routing, revision loop, emergency path
+- `bug_classifier/integrations/notion_logger.py` — Notion ticket creation
+- `bug_classifier/config.py` — Environment loading, validation, and orchestration knobs
