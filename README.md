@@ -95,6 +95,22 @@ If tracing is enabled without `LANGCHAIN_API_KEY`, the app raises a clear error 
 
 The `integrations/notion_logger.py` module is a placeholder; wire `notion-client` there when you implement logging.
 
+## Web UI — watch the agents work
+
+```bash
+make ui            # http://127.0.0.1:8765 (dry-run: no Notion writes)
+# or:
+python -m bug_classifier.ui --port 8765 --dry-run
+```
+
+The control-room UI animates the whole process live: the report fanning out
+to the three specialists in parallel, each agent's request/response pulsing
+along the graph edges, tool calls, the supervisor's verdict (including
+revision feedback flowing back to flagged specialists), the P0 emergency
+branch, confidence meters with the review threshold, and the final ticket.
+From the UI you can classify your own bug reports, run the built-in demo
+examples, or run the pytest suite in a live console.
+
 ## Run the system
 
 From the **repository root** (`BugClassification/`), with your virtual environment activated:

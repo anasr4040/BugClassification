@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: install test eval demo
+.PHONY: install test eval demo ui
 
 install:
 	$(PYTHON) -m pip install -r bug_classifier/requirements.txt
@@ -13,3 +13,6 @@ eval:
 
 demo:
 	$(PYTHON) -m bug_classifier.main --demo --dry-run
+
+ui:
+	$(PYTHON) -m bug_classifier.ui --dry-run
