@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,7 +36,35 @@ if not _xai:
     )
 XAI_API_KEY = _xai
 NOTION_API_KEY = _require("NOTION_API_KEY")
-NOTION_DATABASE_ID = _require("NOTION_DATABASE_ID")
+
+
+def normalize_notion_database_id(raw: str) -> str:
+    """Accept a bare database ID (with or without hyphens) or a full Notion
+    URL (e.g. ``https://app.notion.com/p/<id>?v=<view>``) and return the
+    32-char hex database ID.
+
+    The ``?v=...`` view suffix is ignored; for URLs, the ID is taken from the
+    last path segment so a view ID in the query string is never mistaken for
+    the database ID.
+    """
+    value = (raw or "").strip()
+    if "/" in value:
+        last_segment = value.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+        match = re.search(r"[0-9a-f]{32}", last_segment.replace("-", "").lower())
+        if match:
+            return match.group(0)
+        raise RuntimeError(
+            f"Could not extract a Notion database ID from URL {value!r}. "
+            "Copy the 32-character hex segment from the database URL into "
+            "NOTION_DATABASE_ID."
+        )
+    compact = value.replace("-", "").lower()
+    if re.fullmatch(r"[0-9a-f]{32}", compact):
+        return compact
+    return value
+
+
+NOTION_DATABASE_ID = normalize_notion_database_id(_require("NOTION_DATABASE_ID"))
 NOTION_PARENT_PAGE_ID = _optional("NOTION_PARENT_PAGE_ID")
 _dry_run_raw = (_optional("NOTION_DRY_RUN", "false") or "false").lower()
 NOTION_DRY_RUN = _dry_run_raw in ("1", "true", "yes", "on")

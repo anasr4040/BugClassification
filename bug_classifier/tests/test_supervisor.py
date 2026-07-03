@@ -59,6 +59,36 @@ class TestFindIssues:
         issues = find_issues(state)
         assert set(issues) == {"severity"}
 
+    def test_underrated_crash_with_broad_impact_flagged(self) -> None:
+        state = _classified(
+            {"type": 0.9, "severity": 0.9, "component": 0.9},
+            raw_report=OUTAGE_REPORT,  # "production is completely down", "all users"
+            severity="P2",
+        )
+        issues = find_issues(state)
+        assert set(issues) == {"severity"}
+        assert "broad-impact" in issues["severity"]
+
+    def test_crash_with_mitigation_not_flagged(self) -> None:
+        state = _classified(
+            {"type": 0.9, "severity": 0.9, "component": 0.9},
+            raw_report=(
+                "App crashes for all users of the beta build, but there is a "
+                "workaround: disabling the new flag avoids it entirely."
+            ),
+            severity="P2",
+        )
+        assert find_issues(state) == {}
+
+    def test_ui_rated_p0_flagged(self) -> None:
+        state = _classified(
+            {"type": 0.9, "severity": 0.9, "component": 0.9},
+            bug_type="ui",
+            severity="P0",
+        )
+        issues = find_issues(state)
+        assert set(issues) == {"severity"}
+
 
 class TestSupervise:
     def test_approves_clean_classification_without_llm(self) -> None:

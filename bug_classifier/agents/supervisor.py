@@ -21,6 +21,7 @@ which reads the fields this agent writes.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Literal
 
@@ -93,18 +94,47 @@ def find_issues(state: BugState) -> dict[str, str]:
                 "gather more evidence with your tools and re-examine."
             )
 
-    # Cross-dimension consistency rules.
-    if (
-        "severity" not in issues
-        and state.get("bug_type") == "security"
-        and state.get("severity") == "P3"
-    ):
+    # Cross-dimension consistency rules. The supervisor re-checks the raw
+    # evidence itself (via the deterministic signal scanner) and recalls the
+    # severity assessor when its rating contradicts what the report says.
+    bug_type = state.get("bug_type")
+    severity = state.get("severity")
+
+    if "severity" not in issues and bug_type == "security" and severity == "P3":
         issues["severity"] = (
             "A security bug was rated P3; security issues warrant a higher "
             "baseline severity unless clearly trivial — re-assess the exposure."
         )
 
+    if "severity" not in issues and bug_type == "crash" and severity in ("P2", "P3"):
+        signals = _severity_signals(state["raw_report"])
+        broad = signals.get("broad_impact_signals") or []
+        mitigation = signals.get("mitigation_signals") or []
+        if broad and not mitigation:
+            issues["severity"] = (
+                f"A crash was rated {severity}, but the report contains "
+                f"broad-impact signals ({', '.join(broad[:3])}) and no "
+                "mitigating factors — re-assess whether this is P0/P1."
+            )
+
+    if "severity" not in issues and bug_type == "ui" and severity == "P0":
+        issues["severity"] = (
+            "A UI bug was rated P0; verify the visual issue truly blocks a "
+            "critical workflow for all users, otherwise lower the severity."
+        )
+
     return issues
+
+
+def _severity_signals(report: str) -> dict:
+    """Run the deterministic blast-radius scanner the assessor's tool uses."""
+    from bug_classifier.agents.tools import scan_severity_signals
+
+    try:
+        return json.loads(scan_severity_signals.func(report))  # type: ignore[misc]
+    except Exception:
+        logger.warning("Supervisor signal scan failed.", exc_info=True)
+        return {}
 
 
 def _format_note(scores: dict) -> str:

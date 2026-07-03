@@ -51,11 +51,29 @@ DEMO_EXAMPLES: list[dict[str, str]] = [
         ),
     },
     {
+        "label": "★ Supervisor revision — deliberately vague report",
+        "report": (
+            "Not sure what's going on, but a few customers say their account totals "
+            "look wrong every now and then. Can't reproduce it on demand. Might be "
+            "related to something we shipped recently, or maybe caching? Numbers "
+            "seem fine again after a while."
+        ),
+    },
+    {
         "label": "Example 3 — P3 / ui / frontend",
         "report": (
             "The submit button on the contact form overlaps with the footer text on "
             "mobile devices (iPhone SE screen size). Form still works but looks broken. "
             "Low priority."
+        ),
+    },
+    {
+        "label": "★ Supervisor decision — security bug reported as trivial",
+        "report": (
+            "Tiny cleanup item, no rush at all: the internal page /debug/session "
+            "prints the current session token and the user's email in plain text in "
+            "the on-screen log viewer. Only developers ever open that page, so this "
+            "is a low-priority cosmetic tidy-up for a quiet sprint."
         ),
     },
     {
