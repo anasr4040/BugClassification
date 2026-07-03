@@ -1,6 +1,37 @@
 # Bug classifier (LangGraph)
 
-Multi-agent bug classification pipeline: type, severity (P0–P3), component, and summary. Notion logging will plug in under `integrations/`.
+Multi-agent bug classification system: type, severity (P0–P3), component, and summary, with Notion ticket logging under `integrations/`.
+
+## Architecture
+
+```
+              ┌─→ Type Classifier ───────┐
+   report ────┼─→ Severity Assessor ─────┼─→ Supervisor / Critic ─┬─(revise)──→ flagged specialists ─→ Supervisor …
+              └─→ Component Identifier ──┘                        ├─(P0)──────→ Emergency Handler → END
+                                                                  └─(approve)─→ Summary Agent → Notion Logger → END
+```
+
+- **Parallel specialists** — the type, severity, and component agents run
+  concurrently; reducer-annotated fields in `state.py` merge their
+  simultaneous writes (confidences, agent notes).
+- **Tool-using agents** — each specialist can call investigation tools
+  (`agents/tools.py`): stack-trace parsing, blast-radius signal scanning,
+  technology→component keyword matching, and similar-bug history lookup in
+  Notion. The LLM decides which tools to call in a bounded ReAct loop
+  (`AGENT_TOOL_ROUNDS`).
+- **Supervisor / critic** (`agents/supervisor.py`) — reviews the joined
+  result. Complete, confident, consistent classifications are approved on a
+  deterministic fast path (no LLM cost). Missing/low-confidence/inconsistent
+  dimensions get targeted LLM critique fed back to the flagged specialists
+  for a revision round, bounded by `MAX_REVISION_ROUNDS`; if the budget runs
+  out, the result is approved with `needs_review=True` for human triage.
+- **Emergency path** — an approved P0 skips the summary pipeline and pages
+  on-call. With `HITL_EMERGENCY=true` (and a checkpointer passed to
+  `build_graph`), the graph pauses on a LangGraph interrupt so an operator
+  can approve the escalation or downgrade the severity before anything fires.
+- **Inter-agent communication** — agents append to a shared `agent_notes`
+  channel (reasoning, tools used, critiques), giving downstream agents and
+  operators an audit trail of the conversation.
 
 ## Prerequisites
 
@@ -47,6 +78,10 @@ Edit `.env` and set:
 | `LANGCHAIN_TRACING_V2` | Set to `true` to send traces to LangSmith. |
 | `LANGCHAIN_API_KEY`    | Required **if** `LANGCHAIN_TRACING_V2=true`. |
 | `LANGCHAIN_PROJECT`    | LangSmith project name (default in example: `bug-classifier`). |
+| `CONFIDENCE_REVIEW_THRESHOLD` | Confidence below this triggers a supervisor revision (default `0.7`). |
+| `MAX_REVISION_ROUNDS` | Supervisor revision-round budget (default `1`). |
+| `AGENT_TOOL_ROUNDS`   | Max tool-calling iterations per specialist run (default `3`). |
+| `HITL_EMERGENCY`      | `true` pauses P0 escalation on a human-approval interrupt (needs a checkpointer). |
 
 If tracing is enabled without `LANGCHAIN_API_KEY`, the app raises a clear error at import time.
 
@@ -95,8 +130,8 @@ After changing any agent prompt, run `make eval` to check type/severity/componen
 ## Project layout
 
 - `main.py` — Entry point
-- `state.py` — `BugState` TypedDict and `create_initial_state`
-- `agents/` — One node per concern (placeholders)
-- `graph/workflow.py` — LangGraph `StateGraph` wiring
-- `integrations/notion_logger.py` — Notion hook (placeholder)
-- `config.py` — Environment loading and validation
+- `state.py` — `BugState` TypedDict with reducers for parallel-agent writes
+- `agents/` — Specialist agents (type, severity, component, summary), the supervisor/critic, and their investigation tools (`tools.py`)
+- `graph/workflow.py` — LangGraph `StateGraph` wiring: parallel fan-out, supervisor routing, revision loop, emergency path
+- `integrations/notion_logger.py` — Notion ticket creation
+- `config.py` — Environment loading, validation, and orchestration knobs

@@ -215,10 +215,26 @@ NODE_LABELS: dict[str, str] = {
     "classify_type": "Type Classifier",
     "assess_severity": "Severity Assessor",
     "identify_component": "Component Identifier",
+    "supervisor": "Supervisor / Critic",
     "summarize": "Summary Agent",
     "log_to_notion": "Notion Logger",
     "emergency_handler": "Emergency Handler (P0)",
 }
+
+# State fields that use LangGraph reducers; merged manually for CLI display.
+_MERGE_DICT_FIELDS = ("confidence_scores", "revision_feedback")
+_APPEND_LIST_FIELDS = ("agent_notes",)
+
+
+def _merge_state_update(merged: dict[str, Any], update: dict[str, Any]) -> None:
+    """Mirror the graph's reducer semantics when accumulating streamed updates."""
+    for key, value in update.items():
+        if key in _MERGE_DICT_FIELDS and isinstance(value, dict):
+            merged[key] = {**(merged.get(key) or {}), **value}
+        elif key in _APPEND_LIST_FIELDS and isinstance(value, list):
+            merged[key] = (merged.get(key) or []) + value
+        else:
+            merged[key] = value
 
 
 class Spinner:
@@ -299,6 +315,15 @@ def _print_node_output(
             print(_colorize("    ⚠ P0 detected — routing to emergency path", YELLOW))
     elif node_name == "identify_component":
         print(_colorize(f"    Component: {update.get('component', '—')}", GREEN))
+    elif node_name == "supervisor":
+        verdict = update.get("supervisor_verdict", "—")
+        color = GREEN if verdict == "approve" else YELLOW
+        print(_colorize(f"    Verdict: {verdict}", color))
+        if verdict == "revise":
+            for dimension, feedback in (update.get("revision_feedback") or {}).items():
+                print(_colorize(f"    ↺ {dimension}: {feedback}", YELLOW))
+        if update.get("needs_review"):
+            print(_colorize("    ⚠ Flagged for manual review", YELLOW))
     elif node_name == "summarize":
         summary = update.get("summary", "")
         preview = summary[:280] + ("…" if len(summary) > 280 else "")
@@ -331,6 +356,10 @@ def _print_final_summary(
     print(f"  Severity:  {state.get('severity', '—')}")
     print(f"  Component: {state.get('component', '—')}")
     print(_format_confidence(state.get("confidence_scores")))
+    if state.get("revision_round"):
+        print(_colorize(f"  Revision rounds: {state['revision_round']}", YELLOW))
+    if state.get("needs_review"):
+        print(_colorize("  ⚠ Flagged for manual review by supervisor", YELLOW))
 
     if state.get("ticket_url"):
         print(_colorize(f"  Ticket URL: {state['ticket_url']}", GREEN))
@@ -388,7 +417,7 @@ def run_interactive(
                 elapsed = now - last_mark
                 last_mark = now
                 node_timings[node_name] = elapsed
-                merged.update(update)
+                _merge_state_update(merged, update)
                 _print_node_output(
                     node_name, update, elapsed, verbose=verbose, merged_state=merged
                 )

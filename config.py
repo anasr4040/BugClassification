@@ -40,6 +40,21 @@ NOTION_PARENT_PAGE_ID = _optional("NOTION_PARENT_PAGE_ID")
 _dry_run_raw = (_optional("NOTION_DRY_RUN", "false") or "false").lower()
 NOTION_DRY_RUN = _dry_run_raw in ("1", "true", "yes", "on")
 
+# --- Multi-agent orchestration -------------------------------------------------
+# Confidence below this threshold makes the supervisor request a revision.
+CONFIDENCE_REVIEW_THRESHOLD = float(
+    _optional("CONFIDENCE_REVIEW_THRESHOLD", "0.7") or "0.7"
+)
+# Maximum supervisor-directed revision rounds before approving with a
+# needs_review flag (bounds the review/revise loop).
+MAX_REVISION_ROUNDS = int(_optional("MAX_REVISION_ROUNDS", "1") or "1")
+# Maximum tool-calling iterations each specialist agent may take per run.
+AGENT_TOOL_ROUNDS = int(_optional("AGENT_TOOL_ROUNDS", "3") or "3")
+# When true, the P0 emergency handler pauses for human approval via a
+# LangGraph interrupt (requires compiling the graph with a checkpointer).
+_hitl_raw = (_optional("HITL_EMERGENCY", "false") or "false").lower()
+HITL_EMERGENCY = _hitl_raw in ("1", "true", "yes", "on")
+
 # LangSmith / LangChain tracing
 LANGCHAIN_TRACING_V2 = (_optional("LANGCHAIN_TRACING_V2", "false") or "false").strip()
 LANGCHAIN_API_KEY = (_optional("LANGCHAIN_API_KEY") or "").strip()

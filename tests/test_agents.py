@@ -21,9 +21,9 @@ from bug_classifier.tests.conftest import (
 
 VALID_TYPES = {"crash", "performance", "logic", "security", "ui"}
 AGENT_OWNED_KEYS = {
-    "type_classifier": {"bug_type", "confidence_scores"},
-    "severity_assessor": {"severity", "confidence_scores"},
-    "component_identifier": {"component", "confidence_scores"},
+    "type_classifier": {"bug_type", "confidence_scores", "agent_notes"},
+    "severity_assessor": {"severity", "confidence_scores", "agent_notes"},
+    "component_identifier": {"component", "confidence_scores", "agent_notes"},
     "summary_agent": {"summary"},
 }
 
