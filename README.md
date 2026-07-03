@@ -88,12 +88,17 @@ If tracing is enabled without `LANGCHAIN_API_KEY`, the app raises a clear error 
 ## Notion database setup
 
 1. In Notion, create a new **integration** at [My integrations](https://www.notion.so/my-integrations) and copy the **Internal Integration Secret** into `NOTION_API_KEY`.
-2. Create a **database** (or use an existing one) that will store classified bugs. Share the database with your integration (**⋯** on the database page → **Connections** → add your integration).
-3. Copy the database ID from the database URL:  
-   `https://www.notion.so/{workspace}/{NOTION_DATABASE_ID}?v=...`  
-   The `NOTION_DATABASE_ID` is the 32-character hex segment (with or without hyphens; the client accepts both).
+2. Share your bug database with the integration: open the database page → **⋯** → **Connections** → add your integration. Without this step every write fails with `object_not_found`.
+3. Set `NOTION_DATABASE_ID` — you can paste the **full database URL** straight from the browser (the `?v=...` view suffix is ignored), e.g.:
 
-The `integrations/notion_logger.py` module is a placeholder; wire `notion-client` there when you implement logging.
+   ```
+   NOTION_DATABASE_ID=https://app.notion.com/p/361092537d94804cb986c7634b316d68?v=361092537d9480bab24f000c4f3c2f3a
+   ```
+
+   or just the 32-character hex ID (`361092537d94804cb986c7634b316d68`), with or without hyphens.
+4. Remove `NOTION_DRY_RUN=true` from `.env` (or run without `--dry-run`) to create real tickets.
+
+On the first real write the logger validates the database schema and **auto-creates any missing properties** (Bug Type, Severity, Component, Summary, Status, Confidence, Created By) and select options, so an empty database works out of the box.
 
 ## Web UI — watch the agents work
 
